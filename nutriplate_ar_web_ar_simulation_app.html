@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NutriPlate AR - Simulator Gizi Seimbang Interaktif</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js for 3D/AR Rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls for Web 3D Navigation -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; overflow: hidden; background-color: #0f172a; }
+        canvas { display: block; width: 100%; height: 100%; }
+        /* Custom scrollbar for menu drawer */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(52, 211, 153, 0.5); border-radius: 9999px; }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen text-slate-100 flex flex-col justify-between select-none">
+
+    <!-- Video Feed Background for AR Simulation Mode -->
+    <video id="webcam" class="fixed inset-0 w-full h-full object-cover hidden z-0" autoplay playsinline muted></video>
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 z-10 cursor-grab active:cursor-grabbing"></div>
+
+    <!-- HEADER / TOP NAV -->
+    <header class="relative z-20 p-4 flex justify-between items-center glass-panel m-3 rounded-2xl shadow-2xl">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-slate-950 font-bold shadow-lg shadow-emerald-500/30">
+                <i class="fa-solid fa-utensils text-xl"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg leading-tight bg-gradient-to-r from-emerald-300 via-teal-200 to-cyan-400 bg-clip-text text-transparent">NutriPlate AR</h1>
+                <p class="text-xs text-slate-400">Simulasi Gizi Seimbang & AI Analysis</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <!-- Camera AR Toggle Button -->
+            <button id="toggle-camera-btn" onclick="toggleCameraAR()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold flex items-center gap-2 transition active:scale-95">
+                <i class="fa-solid fa-camera text-emerald-400"></i>
+                <span id="camera-btn-text">Aktifkan Kamera AR</span>
+            </button>
+
+            <!-- Reset Plate Button -->
+            <button onclick="resetPlate()" class="p-2.5 rounded-xl bg-slate-800 hover:bg-red-900/50 border border-slate-700 text-slate-400 hover:text-red-400 transition active:scale-95" title="Kosongkan Piring">
+                <i class="fa-solid fa-rotate-left"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- FLOATING STATS / NUTRITION INDICATOR BAR -->
+    <div class="relative z-20 mx-3 glass-panel p-3.5 rounded-2xl shadow-xl flex flex-col md:flex-row gap-3 items-center justify-between">
+        <div class="w-full md:w-2/3 space-y-2">
+            <div class="flex justify-between items-center text-xs font-medium">
+                <span class="text-slate-300 flex items-center gap-1.5"><i class="fa-solid fa-chart-pie text-emerald-400"></i> Komposisi "Isi Piringku"</span>
+                <span id="total-items-badge" class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">0 Item Di Piring</span>
+            </div>
+            
+            <!-- Multi-Color Progress Bar -->
+            <div class="h-3.5 w-full bg-slate-800/80 rounded-full overflow-hidden flex p-0.5 border border-slate-700">
+                <div id="bar-karbo" class="h-full bg-amber-500 rounded-l-full transition-all duration-500" style="width: 0%" title="Karbohidrat (Target: 33%)"></div>
+                <div id="bar-protein" class="h-full bg-red-500 transition-all duration-500" style="width: 0%" title="Protein (Target: 17%)"></div>
+                <div id="bar-sayur" class="h-full bg-emerald-500 transition-all duration-500" style="width: 0%" title="Sayuran (Target: 33%)"></div>
+                <div id="bar-buah" class="h-full bg-cyan-400 rounded-r-full transition-all duration-500" style="width: 0%" title="Buah-buahan (Target: 17%)"></div>
+            </div>
+
+            <!-- Legend Nutrisi -->
+            <div class="grid grid-cols-4 gap-1 text-[10px] text-center font-semibold">
+                <div class="text-amber-400 bg-amber-950/40 py-0.5 rounded border border-amber-800/30">Karbo <span id="percent-karbo">0%</span></div>
+                <div class="text-red-400 bg-red-950/40 py-0.5 rounded border border-red-800/30">Protein <span id="percent-protein">0%</span></div>
+                <div class="text-emerald-400 bg-emerald-950/40 py-0.5 rounded border border-emerald-800/30">Sayur <span id="percent-sayur">0%</span></div>
+                <div class="text-cyan-300 bg-cyan-950/40 py-0.5 rounded border border-cyan-800/30">Buah <span id="percent-buah">0%</span></div>
+            </div>
+        </div>
+
+        <div class="w-full md:w-1/3 flex gap-2">
+            <!-- Select Target Profile -->
+            <select id="target-profile" onchange="triggerAIAnalysis()" class="w-full bg-slate-800 text-xs border border-slate-700 text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500">
+                <option value="Balita (Pencegahan Stunting)">Target: Balita (Pencegahan Stunting)</option>
+                <option value="Dewasa Seimbang (AKG Standar)">Target: Dewasa (Gizi Seimbang)</option>
+                <option value="Ibu Hamil (Kebutuhan Asam Folat & Protein)">Target: Ibu Hamil (Tinggi Protein)</option>
+                <option value="Remaja (Pencegahan Anemia)">Target: Remaja (Pencegahan Anemia)</option>
+            </select>
+            <button onclick="triggerAIAnalysis()" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Analisis AI
+            </button>
+        </div>
+    </div>
+
+    <!-- BOTTOM FOOD SELECTION DRAWER & AI DRAWER TOGGLE -->
+    <div class="relative z-20 m-3 flex flex-col gap-3">
+
+        <!-- Food Selector Carousel/Grid -->
+        <div class="glass-panel p-3 rounded-2xl">
+            <div class="flex justify-between items-center mb-2 px-1">
+                <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <i class="fa-solid fa-plus text-emerald-400"></i> Tambah Makanan Ke Piring AR:
+                </span>
+                <span class="text-[10px] text-slate-400">Klik item untuk menambahkan</span>
+            </div>
+
+            <div id="food-catalog" class="flex gap-2.5 overflow-x-auto pb-1 pt-1">
+                <!-- Dynamic Items Inserted via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- AI FEEDBACK MODAL / DRAWER PANEL -->
+    <div id="ai-modal" class="fixed inset-x-3 bottom-3 z-30 glass-panel p-4 rounded-2xl shadow-2xl transition-transform duration-500 transform translate-y-[120%] max-h-[80vh] flex flex-col overflow-hidden border border-emerald-500/30">
+        <div class="flex justify-between items-center pb-3 border-b border-slate-700/80">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                    <i class="fa-solid fa-robot text-lg"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-sm text-slate-100">NutriBot AI - Virtual Nutritionist</h3>
+                    <p class="text-[10px] text-emerald-400" id="ai-status">Analisis Berdasarkan Kemenkes RI & AKG</p>
+                </div>
+            </div>
+            <button onclick="toggleAIModal(false)" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 flex items-center justify-center">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div id="ai-content-box" class="py-3 overflow-y-auto space-y-3 text-xs leading-relaxed text-slate-300">
+            <!-- Dynamic AI Analysis Report Inserted Here -->
+        </div>
+
+        <div class="pt-2 border-t border-slate-700/80 flex gap-2">
+            <input type="text" id="ai-user-query" placeholder="Tanyakan saran tambahan tentang menu ini..." class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+            <button onclick="askAIQuestion()" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1">
+                <i class="fa-solid fa-paper-plane"></i> Kirim
+            </button>
+        </div>
+    </div>
+
+    <!-- THREE.JS & AR LOGIC SCRIPT -->
+    <script>
+        // --- DATA CATALOG MATERI GIZI SEIMBANG (LOKAL INDONESIA) ---
+        const FOOD_DATABASE = [
+            { id: 'nasi', name: 'Nasi Putih', category: 'karbo', kalori: 175, color: 0xf8fafc, icon: 'fa-bowl-rice', shape: 'dome', scale: [1.2, 0.6, 1.2] },
+            { id: 'singkong', name: 'Singkong Rebus', category: 'karbo', kalori: 146, color: 0xfef08a, icon: 'fa-cubes', shape: 'box', scale: [0.8, 0.5, 0.8] },
+            { id: 'telur', name: 'Telur Rebus', category: 'protein', kalori: 77, color: 0xfef08a, icon: 'fa-egg', shape: 'egg', scale: [0.6, 0.8, 0.6] },
+            { id: 'tempe', name: 'Tempe Goreng', category: 'protein', kalori: 118, color: 0xd97706, icon: 'fa-square', shape: 'flatBox', scale: [0.9, 0.3, 0.7] },
+            { id: 'ikan', name: 'Ikan Kembung', category: 'protein', kalori: 125, color: 0x64748b, icon: 'fa-fish', shape: 'fish', scale: [1.4, 0.4, 0.5] },
+            { id: 'bayam', name: 'Sayur Bayam', category: 'sayur', kalori: 23, color: 0x15803d, icon: 'fa-leaf', shape: 'scatterLeaves', scale: [1.0, 0.3, 1.0] },
+            { id: 'wortel', name: 'Tumis Wortel', category: 'sayur', kalori: 35, color: 0xea580c, icon: 'fa-carrot', shape: 'cylinder', scale: [0.4, 0.8, 0.4] },
+            { id: 'pisang', name: 'Pisang Ambon', category: 'buah', kalori: 105, color: 0xfacc15, icon: 'fa-apple-whole', shape: 'banana', scale: [0.4, 1.2, 0.4] },
+            { id: 'pepaya', name: 'Potongan Pepaya', category: 'buah', kalori: 46, color: 0xf97316, icon: 'fa-lemon', shape: 'wedge', scale: [0.8, 0.5, 0.6] }
+        ];
+
+        // --- STATE APLIKASI ---
+        let currentPlateItems = [];
+        let scene, camera, renderer, controls;
+        let plateGroup, foodMeshGroup;
+        let isCameraARActive = false;
+        let webcamStream = null;
+
+        // --- INIT THREE.JS 3D AR SIMULATION SCENE ---
+        function init3DScene() {
+            const container = document.getElementById('canvas-container');
+            
+            // Scene Setup
+            scene = new THREE.Scene();
+
+            // Camera Setup
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 8, 10);
+
+            // Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Orbit Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05; // Prevent camera going below table ground
+            controls.minDistance = 4;
+            controls.maxDistance = 20;
+
+            // Lighting setup
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 12, 7);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            // Ground Table (3D Environment)
+            const tableGeo = new THREE.PlaneGeometry(30, 30);
+            const tableMat = new THREE.MeshStandardMaterial({ 
+                color: 0x1e293b, 
+                roughness: 0.8,
+                metalness: 0.2
+            });
+            const table = new THREE.Mesh(tableGeo, tableMat);
+            table.rotation.x = -Math.PI / 2;
+            table.position.y = -0.05;
+            table.receiveShadow = true;
+            scene.add(table);
+
+            // Create Virtual Plate Group
+            plateGroup = new THREE.Group();
+            scene.add(plateGroup);
+
+            // Render 3D Plate Object ("Isi Piringku")
+            create3DPlate();
+
+            // Group for added food items
+            foodMeshGroup = new THREE.Group();
+            plateGroup.add(foodMeshGroup);
+
+            // Handle Resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Render Animation Loop
+            animate();
+        }
+
+        // --- CREATE 3D PLATE WITH PORTS/SECTORS VISUALIZATION ---
+        function create3DPlate() {
+            // Main Ceramic Plate Base
+            const plateGeo = new THREE.CylinderGeometry(3.2, 2.5, 0.25, 64);
+            const plateMat = new THREE.MeshStandardMaterial({ 
+                color: 0xf8fafc, 
+                roughness: 0.2, 
+                metalness: 0.1 
+            });
+            const plateMesh = new THREE.Mesh(plateGeo, plateMat);
+            plateMesh.receiveShadow = true;
+            plateMesh.castShadow = true;
+            plateGroup.add(plateMesh);
+
+            // Plate Inner Rim/Border
+            const rimGeo = new THREE.TorusGeometry(3.1, 0.1, 16, 64);
+            const rimMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.3 });
+            const rim = new THREE.Mesh(rimGeo, rimMat);
+            rim.rotation.x = Math.PI / 2;
+            rim.position.y = 0.12;
+            plateGroup.add(rim);
+
+            // Visual Partition Guides (Isi Piringku 50% & 50% Divider Lines on Plate)
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.6 });
+            
+            // Vertical Dividing Line
+            const geoLine1 = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0.14, -3),
+                new THREE.Vector3(0, 0.14, 3)
+            ]);
+            plateGroup.add(new THREE.Line(geoLine1, lineMat));
+
+            // Right Half Horizontal Divider Line (17% vs 33% partitioning)
+            const geoLine2 = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0.14, 0),
+                new THREE.Vector3(3, 0.14, 0)
+            ]);
+            plateGroup.add(new THREE.Line(geoLine2, lineMat));
+
+            // Left Half Horizontal Divider Line
+            const geoLine3 = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(-3, 0.14, 0),
+                new THREE.Vector3(0, 0.14, 0)
+            ]);
+            plateGroup.add(new THREE.Line(geoLine3, lineMat));
+        }
+
+        // --- GENERATE 3D PROCEDURAL FOOD PROCEDURAL MESHES ---
+        function createFoodMesh(item) {
+            const group = new THREE.Group();
+            let geo, mat;
+
+            mat = new THREE.MeshStandardMaterial({ 
+                color: item.color, 
+                roughness: 0.6,
+                metalness: 0.1
+            });
+
+            switch(item.shape) {
+                case 'dome': // Nasi Putih
+                    geo = new THREE.SphereGeometry(1.2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+                    break;
+                case 'flatBox': // Tempe
+                    geo = new THREE.BoxGeometry(1.4, 0.35, 1.0);
+                    break;
+                case 'egg': // Telur Rebus (Half Egg)
+                    geo = new THREE.SphereGeometry(0.7, 32, 16);
+                    break;
+                case 'fish': // Ikan
+                    geo = new THREE.ConeGeometry(0.6, 2.2, 16);
+                    break;
+                case 'scatterLeaves': // Sayur Bayam
+                    geo = new THREE.DodecahedronGeometry(0.9, 1);
+                    break;
+                case 'cylinder': // Wortel
+                    geo = new THREE.CylinderGeometry(0.3, 0.4, 1.2, 16);
+                    break;
+                case 'banana': // Pisang
+                    geo = new THREE.CylinderGeometry(0.25, 0.3, 1.8, 12);
+                    break;
+                case 'wedge': // Pepaya
+                    geo = new THREE.BoxGeometry(1.2, 0.6, 0.8);
+                    break;
+                default:
+                    geo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+            }
+
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            group.add(mesh);
+
+            // Specific Adjustments for realism
+            if (item.shape === 'fish') group.rotation.z = Math.PI / 2;
+            if (item.shape === 'banana') group.rotation.z = Math.PI / 3;
+
+            return group;
+        }
+
+        // --- RENDER FOOD CATALOG UI ---
+        function renderFoodCatalog() {
+            const container = document.getElementById('food-catalog');
+            container.innerHTML = '';
+
+            FOOD_DATABASE.forEach(item => {
+                const card = document.createElement('div');
+                card.className = "flex-shrink-0 bg-slate-800/90 hover:bg-slate-700/90 border border-slate-700 rounded-xl p-2.5 flex items-center space-x-2 cursor-pointer transition active:scale-95 shadow-md";
+                card.onclick = () => addFoodToPlate(item.id);
+
+                let catBadgeColor = 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+                if(item.category === 'protein') catBadgeColor = 'bg-red-500/20 text-red-400 border-red-500/30';
+                if(item.category === 'sayur') catBadgeColor = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+                if(item.category === 'buah') catBadgeColor = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
+
+                card.innerHTML = `
+                    <div class="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-slate-300">
+                        <i class="fa-solid ${item.icon}"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs font-bold text-slate-200">${item.name}</div>
+                        <div class="flex items-center gap-1.5 mt-0.5">
+                            <span class="text-[9px] px-1.5 py-0.2 rounded border ${catBadgeColor} uppercase font-bold">${item.category}</span>
+                            <span class="text-[10px] text-slate-400">${item.kalori} kkal</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // --- ADD FOOD TO PLATE & REPOSITION IN AR SPACE ---
+        function addFoodToPlate(foodId) {
+            const foodData = FOOD_DATABASE.find(f => f.id === foodId);
+            if (!foodData) return;
+
+            // Maximum items limit
+            if (currentPlateItems.length >= 8) {
+                alert("Piring sudah penuh! Anda dapat mengosongkan piring terlebih dahulu untuk mencoba kombinasi baru.");
+                return;
+            }
+
+            // Assign sector coordinates based on nutrition category
+            let posX = 0, posZ = 0;
+            const catCount = currentPlateItems.filter(i => i.category === foodData.category).length;
+            const offset = catCount * 0.5;
+
+            switch(foodData.category) {
+                case 'karbo': // Left quadrant
+                    posX = -1.4 + offset;
+                    posZ = -0.5 + (offset * 0.3);
+                    break;
+                case 'sayur': // Top right quadrant
+                    posX = 1.3 - offset;
+                    posZ = -1.2 + (offset * 0.4);
+                    break;
+                case 'protein': // Bottom right inner quadrant
+                    posX = 1.0 + (offset * 0.3);
+                    posZ = 0.8 + offset;
+                    break;
+                case 'buah': // Bottom left inner quadrant
+                    posX = -1.2 + offset;
+                    posZ = 1.4 - offset;
+                    break;
+            }
+
+            // Create Mesh
+            const foodMesh = createFoodMesh(foodData);
+            foodMesh.position.set(posX, 0.3, posZ);
+            foodMeshGroup.add(foodMesh);
+
+            // Store state
+            currentPlateItems.push({
+                ...foodData,
+                meshInstance: foodMesh
+            });
+
+            // Update Nutrition Indicators
+            updateNutritionStats();
+        }
+
+        // --- RESET PLATE ---
+        function resetPlate() {
+            currentPlateItems.forEach(item => {
+                foodMeshGroup.remove(item.meshInstance);
+            });
+            currentPlateItems = [];
+            updateNutritionStats();
+            toggleAIModal(false);
+        }
+
+        // --- UPDATE NUTRITION STATS & PROGRESS BAR ---
+        function updateNutritionStats() {
+            const totalItems = currentPlateItems.length;
+            document.getElementById('total-items-badge').innerText = `${totalItems} Item Di Piring`;
+
+            if (totalItems === 0) {
+                ['karbo', 'protein', 'sayur', 'buah'].forEach(cat => {
+                    document.getElementById(`bar-${cat}`).style.width = '0%';
+                    document.getElementById(`percent-${cat}`).innerText = '0%';
+                });
+                return;
+            }
+
+            // Count categories
+            const counts = { karbo: 0, protein: 0, sayur: 0, buah: 0 };
+            currentPlateItems.forEach(item => {
+                if (counts[item.category] !== undefined) {
+                    counts[item.category]++;
+                }
+            });
+
+            // Calculate percentage percentages
+            ['karbo', 'protein', 'sayur', 'buah'].forEach(cat => {
+                const pct = Math.round((counts[cat] / totalItems) * 100);
+                document.getElementById(`bar-${cat}`).style.width = `${pct}%`;
+                document.getElementById(`percent-${cat}`).innerText = `${pct}%`;
+            });
+        }
+
+        // --- SIMULATED AI NUTRITIONIST ANALYSIS ENGINE ---
+        function triggerAIAnalysis() {
+            if (currentPlateItems.length === 0) {
+                alert("Piring virtual masih kosong! Tambahkan beberapa pilihan makanan terlebih dahulu.");
+                return;
+            }
+
+            const targetProfile = document.getElementById('target-profile').value;
+            const contentBox = document.getElementById('ai-content-box');
+            
+            // Show Modal and Loading State
+            toggleAIModal(true);
+            document.getElementById('ai-status').innerText = "NutriBot AI sedang menganalisis porsi...";
+            contentBox.innerHTML = `
+                <div class="flex items-center justify-center py-6 space-x-2 text-emerald-400">
+                    <i class="fa-solid fa-spinner fa-spin text-2xl"></i>
+                    <span>Mengkalkulasi AKG & Keseimbangan Nutrisi...</span>
+                </div>
+            `;
+
+            // Calculate Metrics
+            const totalKalori = currentPlateItems.reduce((acc, curr) => acc + curr.kalori, 0);
+            const counts = { karbo: 0, protein: 0, sayur: 0, buah: 0 };
+            currentPlateItems.forEach(item => counts[item.category]++);
+
+            const total = currentPlateItems.length;
+            const pctKarbo = Math.round((counts.karbo / total) * 100);
+            const pctProtein = Math.round((counts.protein / total) * 100);
+            const pctSayur = Math.round((counts.sayur / total) * 100);
+            const pctBuah = Math.round((counts.buah / total) * 100);
+
+            // Simulate GenAI Analysis Processing Time
+            setTimeout(() => {
+                document.getElementById('ai-status').innerText = `Target: ${targetProfile}`;
+                
+                let balanceStatus = "Seimbang";
+                let statusBadgeClass = "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
+                
+                // Rule-based feedback generation mimicking LLM response
+                if (pctKarbo > 45) {
+                    balanceStatus = "Dominan Karbohidrat";
+                    statusBadgeClass = "bg-amber-500/20 text-amber-300 border-amber-500/40";
+                } else if (counts.protein === 0) {
+                    balanceStatus = "Kurang Protein";
+                    statusBadgeClass = "bg-red-500/20 text-red-300 border-red-500/40";
+                } else if (counts.sayur === 0 && counts.buah === 0) {
+                    balanceStatus = "Defisit Serat & Vitamin";
+                    statusBadgeClass = "bg-red-500/20 text-red-300 border-red-500/40";
+                }
+
+                contentBox.innerHTML = `
+                    <div class="p-2.5 rounded-xl bg-slate-800 border border-slate-700 flex justify-between items-center">
+                        <div>
+                            <span class="text-[10px] text-slate-400 block uppercase font-bold">Evaluasi Ringkas:</span>
+                            <span class="text-xs font-bold text-slate-100">${balanceStatus}</span>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-[10px] text-slate-400 block uppercase font-bold">Total Energi:</span>
+                            <span class="text-xs font-bold text-emerald-400">± ${totalKalori} kkal / porsi</span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <h4 class="font-bold text-emerald-400 flex items-center gap-1">
+                            <i class="fa-solid fa-square-poll-vertical"></i> Analisis Isi Piringku vs Ideal Kemenkes RI:
+                        </h4>
+                        <ul class="list-disc pl-4 space-y-1 text-slate-300">
+                            <li><strong>Karbohidrat:</strong> ${pctKarbo}% (Standar Ideal: ~33%). ${pctKarbo > 40 ? 'Porsi karbohidrat berlebihan, berisiko lonjakan glukosa.' : 'Porsi sudah memadai.'}</li>
+                            <li><strong>Protein Hewani/Nabati:</strong> ${pctProtein}% (Standar Ideal: ~17%). ${counts.protein === 0 ? '<span class="text-red-400">Tidak ada sumber protein! Sangat krusial untuk pertumbuhan sel & pembentukan sel darah merah.</span>' : 'Asupan asam amino sudah terpenuhi.'}</li>
+                            <li><strong>Sayur & Buah:</strong> ${pctSayur + pctBuah}% (Standar Ideal: ~50%). ${pctSayur + pctBuah < 40 ? 'Asupan serat dan mikronutrien masih di bawah rekomendasi.' : 'Ketersediaan serat & antioksidan baik.'}</li>
+                        </ul>
+                    </div>
+
+                    <div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                        <h4 class="font-bold text-amber-400 flex items-center gap-1 mb-1">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Simulasi Dampak Kesehatan (${targetProfile}):
+                        </h4>
+                        <p class="text-slate-300">
+                            ${targetProfile.includes('Balita') && counts.protein === 0 
+                                ? 'Kurangnya konsumsi protein hewani pada anak secara konsisten berisiko tinggi memicu <strong>Stunting</strong> dan hambatan tumbuh kembang kognitif.' 
+                                : 'Pola porsi ini memberikan kecukupan energi harian yang seimbang jika dikombinasikan dengan aktivitas fisik cukup.'}
+                        </p>
+                    </div>
+
+                    <div class="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-800/40">
+                        <h4 class="font-bold text-emerald-300 flex items-center gap-1 mb-1">
+                            <i class="fa-solid fa-lightbulb"></i> Rekomendasi NutriBot:
+                        </h4>
+                        <p class="text-slate-300">
+                            ${counts.sayur === 0 ? '• Tambahkan potongan sayur seperti Bayam/Wortel.<br>' : ''}
+                            ${counts.protein === 0 ? '• Tambahkan sumber protein seperti Telur atau Tempe.<br>' : ''}
+                            • Pastikan melengkapi dengan minum air putih 8 gelas/hari.
+                        </p>
+                    </div>
+                `;
+            }, 800);
+        }
+
+        // --- ASK AI QUESTION (VIRTUAL CHAT SIMULATION) ---
+        function askAIQuestion() {
+            const input = document.getElementById('ai-user-query');
+            const question = input.value.trim();
+            if (!question) return;
+
+            const contentBox = document.getElementById('ai-content-box');
+            
+            // Append user question bubble
+            const userMsg = document.createElement('div');
+            userMsg.className = "bg-slate-800 p-2.5 rounded-xl border border-slate-700 text-slate-200 font-medium text-right";
+            userMsg.innerText = question;
+            contentBox.appendChild(userMsg);
+
+            input.value = '';
+            contentBox.scrollTop = contentBox.scrollHeight;
+
+            // Simulated AI Response
+            setTimeout(() => {
+                const aiMsg = document.createElement('div');
+                aiMsg.className = "bg-emerald-950/40 border border-emerald-800/50 p-2.5 rounded-xl text-slate-300 space-y-1";
+                aiMsg.innerHTML = `
+                    <div class="font-bold text-emerald-400 flex items-center gap-1">
+                        <i class="fa-solid fa-robot"></i> Jawaban NutriBot:
+                    </div>
+                    <p>Berdasarkan panduan Gizi Masyarakat, ${question.toLowerCase().includes('stunting') ? 'protein hewani seperti telur dan ikan memiliki bioavailabilitas lebih tinggi dalam mencegah stunting dibanding protein nabati.' : 'penting untuk menjaga variasi jenis bahan makanan agar kebutuhan mikro-nutrien seperti zat besi, kalsium, dan vitamin C terpenuhi secara optimal.'}</p>
+                `;
+                contentBox.appendChild(aiMsg);
+                contentBox.scrollTop = contentBox.scrollHeight;
+            }, 600);
+        }
+
+        // --- SHOW/HIDE AI MODAL ---
+        function toggleAIModal(show) {
+            const modal = document.getElementById('ai-modal');
+            if (show) {
+                modal.classList.remove('translate-y-[120%]');
+                modal.classList.add('translate-y-0');
+            } else {
+                modal.classList.remove('translate-y-0');
+                modal.classList.add('translate-y-[120%]');
+            }
+        }
+
+        // --- WEBCAM AR SIMULATION TOGGLE ---
+        async function toggleCameraAR() {
+            const video = document.getElementById('webcam');
+            const btnText = document.getElementById('camera-btn-text');
+
+            if (!isCameraARActive) {
+                try {
+                    webcamStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: "environment" } 
+                    });
+                    video.srcObject = webcamStream;
+                    video.classList.remove('hidden');
+                    isCameraARActive = true;
+                    btnText.innerText = "Matikan Kamera AR";
+                    renderer.setClearColor(0x000000, 0); // Make canvas background transparent for AR overlay
+                } catch (err) {
+                    alert("Gagal mengakses kamera perangkat: " + err.message);
+                }
+            } else {
+                if (webcamStream) {
+                    webcamStream.getTracks().forEach(track => track.stop());
+                }
+                video.classList.add('hidden');
+                isCameraARActive = false;
+                btnText.innerText = "Aktifkan Kamera AR";
+                renderer.setClearColor(0x000000, 0);
+            }
+        }
+
+        // --- WINDOW RESIZE ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- RENDER LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Gentle rotation effect for food items
+            if (foodMeshGroup) {
+                foodMeshGroup.children.forEach(mesh => {
+                    mesh.rotation.y += 0.003;
+                });
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // --- ON LOAD INITIALIZATION ---
+        window.onload = function() {
+            init3DScene();
+            renderFoodCatalog();
+        };
+    </script>
+</body>
+</html>
